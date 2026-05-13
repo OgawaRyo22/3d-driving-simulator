@@ -5,6 +5,22 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Three.js Driving Simulator</title>
   <style>
+
+html, body {
+  overflow: hidden !important;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+html::-webkit-scrollbar,
+body::-webkit-scrollbar {
+  display: none;
+}
+
     body {
       margin: 0;
       overflow: hidden;
@@ -900,7 +916,7 @@
   <div id="localM3Picker" style="display:none; position:fixed; left:50%; top:50%; transform:translate(-50%,-50%); z-index:999999; width:min(680px,92vw); padding:22px 26px; border-radius:20px; background:rgba(0,0,0,0.86); color:white; border:1px solid rgba(255,255,255,0.28); box-shadow:0 18px 70px rgba(0,0,0,0.62); text-align:center;">
     <div style="font-size:20px; font-weight:900; margin-bottom:10px;">BMW M3 G80 のFBXを読み込みます</div>
     <div style="font-size:13px; line-height:1.7; color:rgba(255,255,255,0.86); margin-bottom:14px;">
-      file:// 直起動ではブラウザの安全制限により <b>assets/m3G50/BMW M3 Competition G80.FBX</b> を自動取得できません。<br>
+      自動読み込みに失敗した場合のみ、下のボタンから手動で読み込めます。<br>
       下のボタンから <b>assets/m3G50 フォルダ内の FBX と JPG/PNG</b> をまとめて選択してください。
     </div>
     <button id="localM3PickButton" style="font-weight:900; border-radius:999px; padding:11px 20px;">FBX/JPGを選択</button>
@@ -1017,6 +1033,13 @@
     var bgmObjectUrl = null;
     var bgmUserGestureDone = false;
     var bgmPickerSetupDone = false;
+    var bgmStartTimerId = null;
+    var bgmDelayTimerId = null;
+    var m3TextureCache = {};
+    var sfxPlayers = {};
+    var sfxInitialized = false;
+    var wheelspinPlayedThisLaunch = false;
+    var previousShiftWForWheelspin = false;
     var pendingM3Containers = [];
     var localM3AssetUrls = {};
     var localM3FbxBuffer = null;
@@ -1072,8 +1095,8 @@
       { id:'sedan_2', category:'sedan', color:0x1565c0, scale:[3.0,0.88,4.8], cabin:[2.0,0.8,2.0], speed:18 },
       { id:'sedan_3', category:'sedan', color:0xeeeeee, scale:[3.1,0.92,5.1], cabin:[2.1,0.88,2.1], speed:16 },
       { id:'sedan_4', category:'sedan', color:0x263238, scale:[3.0,0.86,4.9], cabin:[2.0,0.8,1.9], speed:17 },
-      { id:'sedan_5', category:'sedan', color:0x0b4fd8, scale:[3.25,0.86,4.95], cabin:[2.0,0.72,1.85], length:4.80, width:1.92, height:1.42, speed:33, specialMaxKmh:300, zeroToHundred:3, m3Style:true },
-      { id:'sedan_6', category:'sedan', color:0x101820, scale:[3.25,0.86,4.95], cabin:[2.0,0.72,1.85], length:4.80, width:1.92, height:1.42, speed:24, specialMaxKmh:300, zeroToHundred:3, m3Style:true, fbxModel:true, modelPath:'assets/m3G50/BMW M3 Competition G80.FBX', modelResourcePath:'assets/m3G50/' },
+      { id:'sedan_5', category:'sedan', color:0x0b4fd8, scale:[3.25,0.86,4.95], cabin:[2.0,0.72,1.85], length:4.80, width:1.92, height:1.42, speed:33, specialMaxKmh:320, zeroToHundred:3, m3Style:true },
+      { id:'sedan_6', category:'sedan', color:0x101820, scale:[3.25,0.86,4.95], cabin:[2.0,0.72,1.85], length:4.80, width:1.92, height:1.42, speed:24, specialMaxKmh:320, zeroToHundred:3, m3Style:true, fbxModel:true, modelPath:'assets/m3G50/BMW M3 Competition G80.FBX', modelResourcePath:'assets/m3G50/' },
       { id:'suv_1', category:'suv', color:0x2e7d32, scale:[3.4,1.25,5.2], cabin:[2.5,1.05,2.5], speed:15 },
       { id:'suv_2', category:'suv', color:0x6d4c41, scale:[3.5,1.3,5.4], cabin:[2.5,1.1,2.4], speed:14 },
       { id:'suv_3', category:'suv', color:0x455a64, scale:[3.45,1.22,5.1], cabin:[2.45,1.0,2.3], speed:15 },
@@ -1081,10 +1104,10 @@
       { id:'minivan_2', category:'minivan', color:0x90a4ae, scale:[3.55,1.5,6.0], cabin:[2.9,1.38,3.3], speed:13 },
       { id:'minivan_3', category:'minivan', color:0x3f51b5, scale:[3.45,1.42,5.7], cabin:[2.75,1.3,3.15], speed:14 },
       { id:'minivan_4', category:'minivan', color:0x212121, scale:[3.55,1.48,5.9], cabin:[2.85,1.34,3.25], speed:13 },
-      { id:'sports_1', category:'sports', color:0xff1744, scale:[3.25,0.65,4.6], cabin:[1.8,0.55,1.55], speed:24 },
-      { id:'sports_2', category:'sports', color:0xff9800, scale:[3.2,0.62,4.5], cabin:[1.75,0.52,1.5], speed:25 },
-      { id:'sports_3', category:'sports', color:0x00bcd4, scale:[3.15,0.64,4.45], cabin:[1.7,0.54,1.45], speed:24 },
-      { id:'sports_4', category:'sports', color:0x7b1fa2, scale:[3.3,0.68,4.7], cabin:[1.85,0.58,1.6], speed:23 },
+      { id:'sports_1', category:'sports', color:0xff1744, scale:[3.25,0.65,4.6], cabin:[1.8,0.55,1.55], speed:24, specialMaxKmh:350 },
+      { id:'sports_2', category:'sports', color:0xff9800, scale:[3.2,0.62,4.5], cabin:[1.75,0.52,1.5], speed:25, specialMaxKmh:350 },
+      { id:'sports_3', category:'sports', color:0x00bcd4, scale:[3.15,0.64,4.45], cabin:[1.7,0.54,1.45], speed:24, specialMaxKmh:350 },
+      { id:'sports_4', category:'sports', color:0x7b1fa2, scale:[3.3,0.68,4.7], cabin:[1.85,0.58,1.6], speed:23, specialMaxKmh:350 },
       { id:'compact_1', category:'compact', color:0xff7043, scale:[2.7,0.82,4.1], cabin:[1.85,0.72,1.8], length:3.95, width:1.72, height:1.52, speed:16 },
       { id:'compact_2', category:'compact', color:0x26a69a, scale:[2.75,0.84,4.2], cabin:[1.9,0.74,1.82], length:4.02, width:1.74, height:1.54, speed:17 },
       { id:'compact_3', category:'compact', color:0xfdd835, scale:[2.68,0.8,4.0], cabin:[1.82,0.7,1.75], length:3.88, width:1.70, height:1.50, speed:16 },
@@ -1111,6 +1134,8 @@
     var drivingDialogueElapsed = 0;
     var randomCharacterTalkTimer = 20;
     var lastRandomTalkLine = '';
+      wheelspinPlayedThisLaunch = false;
+      previousShiftWForWheelspin = false;
     var rainbowTwistDialogueCooldown = 0;
     var rainbowTwistDialogueInside = false;
     var sharpCurveDialogueCooldown = 0;
@@ -1207,6 +1232,7 @@
       document.getElementById('restartButton').addEventListener('click', restartGame);
       setupLocalM3FilePicker();
       setupBgmFilePicker();
+      initDrivingSfx();
 
       document.addEventListener('keydown', onKeyDown);
       document.addEventListener('keyup', onKeyUp);
@@ -1241,6 +1267,18 @@ function hidePageLoading() {
 
   if (splash) {
     splash.style.display = 'none';
+  }
+}
+
+function hideNonGameLoadingOverlaysForBgm() {
+  var page = document.getElementById('pageLoading');
+  if (page) page.style.display = 'none';
+
+  // BGM開始だけでクラッシュ用ローディングが残らないようにする。
+  // 実際に事故処理中のときは showCrashSplashThenReload 側で表示させる。
+  if (!crashSequenceActive) {
+    var crash = document.getElementById('crashSplash');
+    if (crash) crash.style.display = 'none';
   }
 }
     var characterOptions = [
@@ -1647,7 +1685,7 @@ function getFemaleAStage() {
 
     function updateDrivingDialogue(dt) {
       hideDialogueIfNeeded(dt);
-      if (!gameStarted || paused || crashSequenceActive) return;
+      if (!gameStarted || paused || crashSequenceActive) { stopAllDrivingSfx(); return; }
 
       drivingDialogueElapsed += dt;
       randomCharacterTalkTimer -= dt;
@@ -2310,7 +2348,25 @@ function getFemaleAStage() {
       sunLight.intensity = lerp(1.35, 0.06, nightFactor);
     }
 
-    function isRainbowLikeMap() {
+    
+    function clearHumanAndTwoWheelNPCsForEmptyMaps() {
+      if (npcGroup) {
+        try { scene.remove(npcGroup); } catch(e) {}
+        npcGroup = null;
+      }
+
+      for (var i=0; i<bikes.length; i++) {
+        try { scene.remove(bikes[i]); } catch(e) {}
+      }
+      for (var j=0; j<bicycles.length; j++) {
+        try { scene.remove(bicycles[j]); } catch(e) {}
+      }
+
+      bikes.length = 0;
+      bicycles.length = 0;
+    }
+
+function isRainbowLikeMap() {
       return selectedMapType === 'rainbow' || selectedMapType === 'rainbow2';
     }
 
@@ -2352,6 +2408,7 @@ function getFemaleAStage() {
 
 
     function createCircuitMap() {
+      clearHumanAndTwoWheelNPCsForEmptyMaps();
       // サーキット：高速走行と急カーブ・ドリフト練習用の専用道路。
       // 周囲に車・歩行者・バイクを出さず、広いロード幅とランオフを確保する。
       scene.background = new THREE.Color(0xb9d7ee);
@@ -2411,7 +2468,7 @@ function getFemaleAStage() {
         var midZ = (p0.z + p1.z) * 0.5;
 
         var road = new THREE.Mesh(new THREE.BoxGeometry(roadWidth, 0.10, segLen + 2.0), roadMat);
-        road.position.set(midX, 0.055, midZ);
+        road.position.set(midX, 0.02, midZ);
         road.rotation.y = heading;
         road.userData.roadTextureMesh = true;
         scene.add(road);
@@ -2419,7 +2476,7 @@ function getFemaleAStage() {
         // 中央破線
         if (j % 3 === 0) {
           var dash = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.025, Math.min(8, segLen * 0.65)), lineMat);
-          dash.position.set(midX, 0.13, midZ);
+          dash.position.set(midX, 0.02, midZ);
           dash.rotation.y = heading;
           dash.userData.whiteLineTextureMesh = true;
           scene.add(dash);
@@ -2456,12 +2513,12 @@ function getFemaleAStage() {
 
       // ピットロード風の長い直線道路。高速から急カーブへ入る練習用。
       var pit = new THREE.Mesh(new THREE.BoxGeometry(24, 0.095, 150), roadMat);
-      pit.position.set(0, 0.06, -205);
+      pit.position.set(0, 0.02, -205);
       pit.rotation.y = Math.PI / 2;
       pit.userData.roadTextureMesh = true;
       scene.add(pit);
       var startLine = new THREE.Mesh(new THREE.BoxGeometry(36, 0.035, 1.2), lineMat);
-      startLine.position.set(0, 0.15, -145);
+      startLine.position.set(0, 0.02, -145);
       startLine.rotation.y = Math.PI / 2;
       startLine.userData.whiteLineTextureMesh = true;
       scene.add(startLine);
@@ -2476,13 +2533,80 @@ function getFemaleAStage() {
       }
 
       var towerMat = new THREE.MeshStandardMaterial({ color:0xeeeeee, roughness:0.72 });
-      var controlTower = new THREE.Mesh(new THREE.BoxGeometry(18, 28, 18), towerMat);
+      
+      // ===== 追加：最高速を出しやすい超ロングストレート =====
+      // サーキット本線とは別に、長い直線区間を作り、加速・最高速確認をしやすくする。
+      var straightLength = 760;
+      var straightWidth = 42;
+      var straightZ = -340;
+
+      var straightRoad = new THREE.Mesh(
+        new THREE.BoxGeometry(straightWidth, 0.08, straightLength),
+        roadMat
+      );
+      straightRoad.position.set(0, 0.02, straightZ);
+      straightRoad.receiveShadow = true;
+      scene.add(straightRoad);
+
+      // 中央線と左右白線
+      var straightCenterLine = new THREE.Mesh(
+        new THREE.BoxGeometry(0.38, 0.09, straightLength - 24),
+        lineMat
+      );
+      straightCenterLine.position.set(0, 0.02, straightZ);
+      scene.add(straightCenterLine);
+
+      for (var sl=0; sl<2; sl++) {
+        var sxLine = sl === 0 ? -straightWidth * 0.36 : straightWidth * 0.36;
+        var sideLine = new THREE.Mesh(
+          new THREE.BoxGeometry(0.52, 0.10, straightLength - 18),
+          lineMat
+        );
+        sideLine.position.set(sxLine, 0.02, straightZ);
+        scene.add(sideLine);
+      }
+
+      // ガードレール
+      var straightBarrierMat = new THREE.MeshStandardMaterial({ color:0xd9dde0, roughness:0.62, metalness:0.18 });
+      for (var sb=0; sb<2; sb++) {
+        var bx = sb === 0 ? -straightWidth * 0.56 : straightWidth * 0.56;
+        var barrier = new THREE.Mesh(
+          new THREE.BoxGeometry(1.05, 1.05, straightLength),
+          straightBarrierMat
+        );
+        barrier.position.set(bx, 0.58, straightZ);
+        scene.add(barrier);
+        colliders.push({ type:'box', x:bx, z:straightZ, halfX:0.55, halfZ:straightLength/2 });
+      }
+
+      // 本線との接続用の広い合流パッド
+      var connector = new THREE.Mesh(
+        new THREE.BoxGeometry(130, 0.075, 58),
+        roadMat
+      );
+      connector.position.set(0, 0.02, -5);
+      connector.receiveShadow = true;
+      scene.add(connector);
+
+      // スタート・最高速計測らしい横ライン
+      for (var mark=0; mark<5; mark++) {
+        var zMark = straightZ + straightLength/2 - 70 - mark * 95;
+        var markLine = new THREE.Mesh(
+          new THREE.BoxGeometry(straightWidth * 0.88, 0.115, 0.55),
+          lineMat
+        );
+        markLine.position.set(0, 0.02, zMark);
+        scene.add(markLine);
+      }
+
+var controlTower = new THREE.Mesh(new THREE.BoxGeometry(18, 28, 18), towerMat);
       controlTower.position.set(85, 14, -235);
       scene.add(controlTower);
     }
 
 
     function createRainbowRoadMap() {
+      clearHumanAndTwoWheelNPCsForEmptyMaps();
       // レインボーロード：宇宙空間を一周する長距離・高低差付きコース。
       // 坂道は急な段差にならないよう、周期関数で滑らかな閉ループにする。
       scene.background = new THREE.Color(0x000006);
@@ -2568,6 +2692,7 @@ function getFemaleAStage() {
 
 
     function createRainbowRoad2Map() {
+      clearHumanAndTwoWheelNPCsForEmptyMaps();
       // レインボーロード2：常に昼の空中ガーデン。
       // 参考画像のように、白い雲海、浮島、巨大な葉、花、泡、明るい虹色ロードで構成する。
       scene.background = new THREE.Color(0xaeeaff);
@@ -2605,9 +2730,9 @@ function getFemaleAStage() {
       // レインボーロード2では道路・フェンスの発光を削除する。
       // 白飛びを避けるため、AdditiveBlending / toneMapped:false / 光源追加は使わない。
       var sideGlowMat = new THREE.MeshStandardMaterial({ color:0xf2fff6, roughness:0.42, metalness:0.0, transparent:true, opacity:0.34, side:THREE.DoubleSide, depthWrite:true });
-      var fencePostMat = new THREE.MeshStandardMaterial({ color:0xf4ffff, roughness:0.18, metalness:0.62, transparent:false, opacity:1.0, side:THREE.DoubleSide, depthWrite:true, blending:THREE.NormalBlending });
+      var fencePostMat = new THREE.MeshStandardMaterial({ color:0xffd700, emissive:0x8a5a00, emissiveIntensity:0.18, roughness:0.18, metalness:0.82, transparent:false, opacity:1.0, side:THREE.DoubleSide, depthWrite:true, blending:THREE.NormalBlending });
       fencePostMat.userData = { rainbowRoad2FenceMaterial:true };
-      var fenceRailMat = new THREE.MeshStandardMaterial({ color:0xe0f7ff, roughness:0.20, metalness:0.58, transparent:false, opacity:1.0, side:THREE.DoubleSide, depthWrite:true, blending:THREE.NormalBlending });
+      var fenceRailMat = new THREE.MeshStandardMaterial({ color:0xffd700, emissive:0x8a5a00, emissiveIntensity:0.22, roughness:0.16, metalness:0.86, transparent:false, opacity:1.0, side:THREE.DoubleSide, depthWrite:true, blending:THREE.NormalBlending });
       fenceRailMat.userData = { rainbowRoad2FenceMaterial:true };
 
       createContinuousRainbowRoadMeshes(rainbowColors, roadWidth);
@@ -2642,10 +2767,38 @@ function getFemaleAStage() {
       // レインボーロード2内のマテリアルを最後にまとめて調整し、
       // 空の色・オブジェクトの色相/彩度は変えずに白飛びだけ抑える。
       softenRainbow2Materials();
+      applyRainbow2GoldFenceMaterials();
     }
 
 
-    function softenRainbow2Materials() {
+    
+    function applyRainbow2GoldFenceMaterials() {
+      if (selectedMapType !== 'rainbow2' || !scene) return;
+      scene.traverse(function(obj) {
+        if (!obj || !obj.material) return;
+        var mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+        var changed = false;
+        for (var i=0; i<mats.length; i++) {
+          var mat = mats[i];
+          if (mat && mat.userData && mat.userData.rainbowRoad2FenceMaterial) {
+            mat.color.setHex(0xffd700);
+            if (mat.emissive) {
+              mat.emissive.setHex(0x8a5a00);
+              mat.emissiveIntensity = 0.20;
+            }
+            if (typeof mat.metalness === 'number') mat.metalness = 0.86;
+            if (typeof mat.roughness === 'number') mat.roughness = 0.16;
+            mat.transparent = false;
+            mat.opacity = 1.0;
+            mat.needsUpdate = true;
+            changed = true;
+          }
+        }
+        if (changed) obj.material = Array.isArray(obj.material) ? mats : mats[0];
+      });
+    }
+
+function softenRainbow2Materials() {
       if (selectedMapType !== 'rainbow2' || !scene) return;
 
       function isWhiteLike(mat) {
@@ -4732,6 +4885,10 @@ function getFemaleAStage() {
     }
 
     function addNPCs() {
+      if (selectedMapType === 'rainbow' || selectedMapType === 'rainbow2' || selectedMapType === 'circuit') {
+        npcGroup = null;
+        return;
+      }
       npcGroup = new THREE.Group();
       scene.add(npcGroup);
       var bodyMat = new THREE.MeshStandardMaterial({ color:0x3949ab });
@@ -4880,52 +5037,221 @@ function getFemaleAStage() {
       return list;
     }
 
+    function getMeshOnlyBox(obj) {
+      var box = new THREE.Box3();
+      var hasMesh = false;
+      obj.updateMatrixWorld(true);
+      obj.traverse(function(child) {
+        if (!child || !child.isMesh || !child.geometry) return;
+        if (child.geometry.computeBoundingBox && !child.geometry.boundingBox) {
+          child.geometry.computeBoundingBox();
+        }
+        if (!child.geometry.boundingBox) return;
+        var childBox = child.geometry.boundingBox.clone();
+        childBox.applyMatrix4(child.matrixWorld);
+        if (!hasMesh) {
+          box.copy(childBox);
+          hasMesh = true;
+        } else {
+          box.union(childBox);
+        }
+      });
+      return hasMesh ? box : new THREE.Box3().setFromObject(obj);
+    }
+
     function normalizeImportedCarObject(obj, spec) {
       var targetLength = spec.length || 4.8;
       var targetWidth = spec.width || 1.92;
       var targetHeight = spec.height || 1.42;
+
+      obj.visible = true;
       obj.rotation.set(0, 0, 0);
       obj.scale.set(1, 1, 1);
       obj.position.set(0, 0, 0);
+
+      obj.traverse(function(child) {
+        if (!child) return;
+        child.visible = true;
+        child.frustumCulled = false;
+      });
+
       obj.updateMatrixWorld(true);
-      var box = new THREE.Box3().setFromObject(obj);
+
+      var box = getMeshOnlyBox(obj);
       var size = new THREE.Vector3();
       box.getSize(size);
+
+      // FBXによっては横向きで出るため、長手方向がXならZ方向に合わせる。
       if (size.x > size.z * 1.15) {
         obj.rotation.y = -Math.PI / 2;
         obj.updateMatrixWorld(true);
-        box = new THREE.Box3().setFromObject(obj);
+        box = getMeshOnlyBox(obj);
         box.getSize(size);
       }
-      var scale = Math.min(
-        targetWidth / Math.max(size.x, 0.001),
-        targetHeight / Math.max(size.y, 0.001),
-        targetLength / Math.max(size.z, 0.001)
-      );
-      obj.scale.multiplyScalar(Math.max(scale, 0.001));
+
+      var maxDim = Math.max(size.x, size.y, size.z);
+      var scale;
+
+      // 異常に大きい/小さいFBXでも必ずゲーム内寸法へ正規化する。
+      if (!isFinite(maxDim) || maxDim <= 0.0001) {
+        scale = 0.01;
+      } else {
+        scale = Math.min(
+          targetWidth / Math.max(size.x, 0.001),
+          targetHeight / Math.max(size.y, 0.001),
+          targetLength / Math.max(size.z, 0.001)
+        );
+      }
+
+      obj.scale.multiplyScalar(Math.max(scale, 0.00001));
       obj.updateMatrixWorld(true);
-      box = new THREE.Box3().setFromObject(obj);
+
+      box = getMeshOnlyBox(obj);
       var center = new THREE.Vector3();
       box.getCenter(center);
+
       obj.position.x -= center.x;
       obj.position.z -= center.z;
       obj.position.y -= box.min.y;
+
+      // 原点に対して少しだけ地面から浮かせ、埋まりを防ぐ
+      obj.position.y += 0.02;
+
       obj.updateMatrixWorld(true);
     }
 
+    function loadM3Texture(name, encoding) {
+      if (m3TextureCache[name]) return m3TextureCache[name];
+
+      var texture = null;
+      try {
+        texture = new THREE.TextureLoader().load('assets/m3G50/' + name);
+        texture.flipY = true;
+        texture.wrapS = THREE.RepeatWrapping;
+        texture.wrapT = THREE.RepeatWrapping;
+        texture.anisotropy = renderer ? Math.min(8, renderer.capabilities.getMaxAnisotropy ? renderer.capabilities.getMaxAnisotropy() : 4) : 4;
+        if (encoding && THREE.sRGBEncoding) texture.encoding = THREE.sRGBEncoding;
+        texture.needsUpdate = true;
+      } catch (e) {
+        console.warn('M3 texture load failed:', name, e);
+      }
+
+      m3TextureCache[name] = texture;
+      return texture;
+    }
+
+    function loadAllM3Textures() {
+      return {
+        BMWlogo: loadM3Texture('BMWlogo.jpg', true),
+        bump: loadM3Texture('bump.jpg', false),
+        diffuse: loadM3Texture('diffuse.jpg', true),
+        normal: loadM3Texture('normal.jpg', false),
+        number: loadM3Texture('number.jpg', true),
+        ottone: loadM3Texture('ottone_big_s.jpg', true),
+        scratches: loadM3Texture('Scratches.jpg', true),
+        specular: loadM3Texture('specular.jpg', false),
+        toyo: loadM3Texture('Toyo_Proxes_CT01.jpg', true),
+        unnamed: loadM3Texture('unnamed.jpg', true)
+      };
+    }
+
+    function guessM3MaterialRole(mat, child) {
+      var n = ((mat && mat.name) || '') + ' ' + ((child && child.name) || '');
+      n = n.toLowerCase();
+
+      if (n.indexOf('tire') >= 0 || n.indexOf('tyre') >= 0 || n.indexOf('wheel') >= 0 || n.indexOf('toyo') >= 0 || n.indexOf('rubber') >= 0) return 'tire';
+      if (n.indexOf('glass') >= 0 || n.indexOf('window') >= 0 || n.indexOf('windscreen') >= 0) return 'glass';
+      if (n.indexOf('logo') >= 0 || n.indexOf('badge') >= 0 || n.indexOf('bmw') >= 0) return 'logo';
+      if (n.indexOf('number') >= 0 || n.indexOf('plate') >= 0 || n.indexOf('license') >= 0) return 'number';
+      if (n.indexOf('chrome') >= 0 || n.indexOf('metal') >= 0 || n.indexOf('ottone') >= 0 || n.indexOf('grill') >= 0 || n.indexOf('exhaust') >= 0) return 'metal';
+      if (n.indexOf('light') >= 0 || n.indexOf('lamp') >= 0) return 'light';
+      return 'body';
+    }
+
+    function convertToStandardMaterial(oldMat, role, tex) {
+      var color = (oldMat && oldMat.color) ? oldMat.color.clone() : new THREE.Color(0xffffff);
+
+      var params = {
+        color: color,
+        roughness: 0.34,
+        metalness: 0.25,
+        side: THREE.DoubleSide
+      };
+
+      if (role === 'body') {
+        params.map = tex.diffuse || (oldMat && oldMat.map) || null;
+        params.roughnessMap = tex.scratches || null;
+        params.roughness = 0.28;
+        params.metalness = 0.72;
+      } else if (role === 'tire') {
+        params.map = tex.toyo || tex.unnamed || (oldMat && oldMat.map) || null;
+        params.bumpMap = tex.bump || null;
+        params.roughness = 0.88;
+        params.metalness = 0.08;
+        params.color = new THREE.Color(0x111111);
+      } else if (role === 'glass') {
+        params.map = (oldMat && oldMat.map) || null;
+        params.color = new THREE.Color(0x223344);
+        params.roughness = 0.06;
+        params.metalness = 0.15;
+        params.transparent = true;
+        params.opacity = 0.48;
+      } else if (role === 'logo') {
+        params.map = tex.BMWlogo || (oldMat && oldMat.map) || null;
+        params.roughness = 0.24;
+        params.metalness = 0.35;
+      } else if (role === 'number') {
+        params.map = tex.number || (oldMat && oldMat.map) || null;
+        params.roughness = 0.42;
+        params.metalness = 0.15;
+      } else if (role === 'metal') {
+        params.map = tex.ottone || tex.specular || (oldMat && oldMat.map) || null;
+        params.roughness = 0.22;
+        params.metalness = 0.82;
+      } else if (role === 'light') {
+        params.map = (oldMat && oldMat.map) || null;
+        params.emissive = new THREE.Color(0xffffff);
+        params.emissiveIntensity = 0.32;
+        params.roughness = 0.18;
+        params.metalness = 0.2;
+      }
+
+      if (tex.normal && (role === 'body' || role === 'tire')) {
+        params.normalMap = tex.normal;
+        params.normalScale = new THREE.Vector2(role === 'tire' ? 0.32 : 0.12, role === 'tire' ? 0.32 : 0.12);
+      }
+
+      var mat = new THREE.MeshStandardMaterial(params);
+      if (mat.map && THREE.sRGBEncoding) mat.map.encoding = THREE.sRGBEncoding;
+      mat.needsUpdate = true;
+      return mat;
+    }
+
     function tuneImportedCarMaterials(obj) {
+      var tex = loadAllM3Textures();
+
       obj.traverse(function(child) {
         if (!child || !child.isMesh) return;
+
+        child.visible = true;
+        child.frustumCulled = false;
         child.castShadow = !isOptimizedMode;
         child.receiveShadow = true;
-        var mats = Array.isArray(child.material) ? child.material : [child.material];
-        mats.forEach(function(mat) {
-          if (!mat) return;
-          if (mat.map) { mat.map.encoding = THREE.sRGBEncoding; mat.map.needsUpdate = true; }
-          if (typeof mat.metalness === 'number') mat.metalness = Math.max(mat.metalness, 0.25);
-          if (typeof mat.roughness === 'number') mat.roughness = Math.max(0.20, Math.min(mat.roughness, 0.66));
-          mat.needsUpdate = true;
-        });
+
+        if (!child.material) {
+          child.material = convertToStandardMaterial(null, 'body', tex);
+          return;
+        }
+
+        if (Array.isArray(child.material)) {
+          child.material = child.material.map(function(mat) {
+            var role = guessM3MaterialRole(mat, child);
+            return convertToStandardMaterial(mat, role, tex);
+          });
+        } else {
+          var role = guessM3MaterialRole(child.material, child);
+          child.material = convertToStandardMaterial(child.material, role, tex);
+        }
       });
     }
 
@@ -5062,6 +5388,57 @@ function getFemaleAStage() {
       }
     }
 
+    function buildAssetUrlCandidates(path) {
+      var raw = String(path || '').replace(/\\/g, '/').replace(/^\.\//, '');
+      var encodedFileOnly = raw.replace('BMW M3 Competition G80.FBX', 'BMW%20M3%20Competition%20G80.FBX');
+      var encodedAll = raw.split('/').map(function(part){ return encodeURIComponent(part); }).join('/');
+      var list = [];
+      function add(v) { if (v && list.indexOf(v) === -1) list.push(v); }
+
+      add(raw);
+      add('./' + raw);
+      add(encodedFileOnly);
+      add('./' + encodedFileOnly);
+      add(encodedAll);
+      add('./' + encodedAll);
+
+      try { add(new URL(raw, document.baseURI).href); } catch(e) {}
+      try { add(new URL(encodedFileOnly, document.baseURI).href); } catch(e) {}
+      try { add(new URL(encodedAll, document.baseURI).href); } catch(e) {}
+
+      return list;
+    }
+
+    function loadArrayBufferFromCandidates(candidates, onSuccess, onFail) {
+      var index = 0;
+
+      function next() {
+        if (index >= candidates.length) {
+          onFail && onFail();
+          return;
+        }
+
+        var url = candidates[index++];
+        console.log('BMW M3 FBX fetch試行:', url);
+
+        fetch(url, { cache: 'no-store' })
+          .then(function(res) {
+            if (!res.ok) throw new Error('HTTP ' + res.status + ' / ' + url);
+            return res.arrayBuffer();
+          })
+          .then(function(buffer) {
+            console.log('BMW M3 FBX fetch成功:', url, buffer.byteLength, 'bytes');
+            onSuccess(buffer, url);
+          })
+          .catch(function(err) {
+            console.warn('BMW M3 FBX fetch失敗:', err);
+            next();
+          });
+      }
+
+      next();
+    }
+
     function loadFbxVehicleIntoContainer(container, spec) {
       if (!spec || !spec.modelPath) return;
       if (!fbxVehicleCache) fbxVehicleCache = {};
@@ -5086,6 +5463,7 @@ function getFemaleAStage() {
         imported.name = 'BMW_M3_G80_FBX_Model';
         container.add(imported);
         container.userData.externalModelLoaded = true;
+        hideLocalM3Picker();
         console.log('BMW M3 FBX 読み込み成功:', exactPath);
       }
 
@@ -5103,8 +5481,6 @@ function getFemaleAStage() {
         return;
       }
 
-      // file:// 直起動ではChrome等がXHRでローカルFBXを自動取得できない。
-      // そのためユーザー操作のFileReaderで読み込む方式に切り替える。
       if (location.protocol === 'file:') {
         pendingM3Containers.push({ container: container, spec: spec });
         showFbxNotice('file://起動のため、BMW M3 G80のFBXを手動選択で読み込みます。');
@@ -5115,49 +5491,33 @@ function getFemaleAStage() {
         return;
       }
 
-      var manager = createM3LoadingManager(resourcePath);
-      var loader = new THREE.FBXLoader(manager);
-      if (loader.setResourcePath) loader.setResourcePath(resourcePath);
-      if (loader.setPath) loader.setPath('');
-
-      var candidates = [
-        exactPath,
-        './' + exactPath,
-        exactPath.replace(/ /g, '%20'),
-        './' + exactPath.replace(/ /g, '%20')
-      ];
-      candidates = candidates.filter(function(v, i, arr){ return v && arr.indexOf(v) === i; });
-
-      function tryLoad(index) {
-        if (index >= candidates.length) {
-          pendingM3Containers.push({ container: container, spec: spec });
-          showFbxNotice('BMW M3 FBXを自動読み込みできませんでした。FBX/JPGを手動選択してください。');
-          showLocalM3Picker();
-          return;
-        }
-
-        var target = candidates[index];
-        console.log('BMW M3 FBX 読み込み試行:', target);
-
-        loader.load(
-          target,
-          function(obj) {
+      // ローカルサーバー利用時は、FBXLoader.loadより先にfetchでArrayBuffer取得→FBXLoader.parseする。
+      // スペース入りファイル名やPython簡易サーバーのURL処理に強い方式。
+      var candidates = buildAssetUrlCandidates(exactPath);
+      loadArrayBufferFromCandidates(
+        candidates,
+        function(buffer, loadedUrl) {
+          try {
+            localM3FbxBuffer = buffer;
+            var manager = createM3LoadingManager(resourcePath);
+            var loader = new THREE.FBXLoader(manager);
+            if (loader.setResourcePath) loader.setResourcePath(resourcePath);
+            var obj = loader.parse(buffer, resourcePath);
             fbxVehicleCache[exactPath] = obj;
             attachObject(obj);
-          },
-          function(xhr) {
-            if (xhr && xhr.total) {
-              console.log('BMW M3 FBX loading:', Math.round(xhr.loaded / xhr.total * 100) + '%');
-            }
-          },
-          function(error) {
-            console.warn('BMW M3 FBX 読み込み失敗:', target, error);
-            tryLoad(index + 1);
+          } catch (err) {
+            console.error('BMW M3 FBX parse失敗:', err);
+            pendingM3Containers.push({ container: container, spec: spec });
+            showFbxNotice('FBXは取得できましたが解析に失敗しました。FBX/JPGを手動選択してください。');
+            showLocalM3Picker();
           }
-        );
-      }
-
-      tryLoad(0);
+        },
+        function() {
+          pendingM3Containers.push({ container: container, spec: spec });
+          showFbxNotice('BMW M3 FBXを自動読み込みできませんでした。assets/m3G50/BMW M3 Competition G80.FBX の配置を確認してください。');
+          showLocalM3Picker();
+        }
+      );
     }
 
     function createVehicleModel(spec, isPlayer) {
@@ -5193,7 +5553,9 @@ function getFemaleAStage() {
         bodyLength = spec.length || 4.8;
         bodyWidth = spec.width || 1.92;
         bodyHeight = spec.height || 1.42;
+        vehicle.userData.isExternalFbxVehicle = true;
         loadFbxVehicleIntoContainer(vehicle, spec);
+        return vehicle;
 
       // ===== ミニバン専用形状（ノア風） =====
       } else if (spec.category === 'minivan') {
@@ -6768,9 +7130,17 @@ function getFemaleAStage() {
       }
 
       if (selectedMapType === 'circuit') {
-        car.position.set(0, 0, -145);
-        carState.heading = Math.PI / 2;
+        // ロングストレートの車線中央から開始（壁に接触しない安全位置）
+        // ストレート幅42m・中央線上に配置
+        car.position.set(0, 0.03, -340);
+        carState.heading = 0;
         car.rotation.y = carState.heading;
+
+        // 衝突状態をリセット
+        carState.speed = 0;
+        carState.steer = 0;
+        carState.angularVelocity = 0;
+
         return;
       }
 
@@ -6793,7 +7163,214 @@ function getFemaleAStage() {
     }
 
     
-    function setupBgmFilePicker() {
+    
+    function initDrivingSfx() {
+      if (sfxInitialized) return;
+      sfxInitialized = true;
+
+      function makeSfx(path, loop, volume) {
+        var audio = new Audio();
+        audio.preload = 'auto';
+        audio.src = path;
+        audio.loop = !!loop;
+        audio.volume = volume;
+        audio._desiredPlaying = false;
+        audio._sfxName = path;
+        audio._loopRefreshBound = false;
+        try { audio.load(); } catch(e) {}
+        return audio;
+      }
+
+      sfxPlayers.curve = makeSfx('assets/se_curve.wav', true, 0.72);
+      sfxPlayers.drift = makeSfx('assets/se_drift.wav', true, 0.78);
+      sfxPlayers.brake = makeSfx('assets/se_brake.wav', true, 0.78);
+      sfxPlayers.wheelspin = makeSfx('assets/se_wheelspin.wav', false, 0.86);
+    }
+
+    function primeDrivingSfx() {
+      initDrivingSfx();
+
+      // ユーザー操作直後に一瞬だけplay/pauseして、以後のSE再生を許可されやすくする。
+      ['curve','drift','brake','wheelspin'].forEach(function(name) {
+        var audio = sfxPlayers[name];
+        if (!audio || audio._primed) return;
+        audio._primed = true;
+        try {
+          audio.muted = true;
+          var p = audio.play();
+          if (p && p.then) {
+            p.then(function(){
+              try { audio.pause(); audio.currentTime = 0; } catch(e) {}
+              audio.muted = false;
+            }).catch(function(){
+              audio.muted = false;
+            });
+          } else {
+            try { audio.pause(); audio.currentTime = 0; } catch(e) {}
+            audio.muted = false;
+          }
+        } catch(e) {
+          audio.muted = false;
+        }
+      });
+    }
+
+    function bindSeamlessLoopGuard(audio, name) {
+      if (!audio || audio._loopRefreshBound) return;
+      audio._loopRefreshBound = true;
+
+      // 一部ブラウザでloop境界に一瞬無音が出る場合、endedでも即再始動する保険。
+      audio.addEventListener('ended', function() {
+        if (!audio._desiredPlaying) return;
+        try {
+          audio.currentTime = 0;
+          var p = audio.play();
+          if (p && p.catch) p.catch(function(err){ console.warn('SE loop restart failed:', name, err); });
+        } catch(e) {}
+      });
+
+      // タブ復帰やデコード遅延で止まった時も、必要状態なら自動復帰。
+      audio.addEventListener('pause', function() {
+        if (!audio._desiredPlaying) return;
+        setTimeout(function(){
+          if (!audio._desiredPlaying || !audio.paused) return;
+          try {
+            var p = audio.play();
+            if (p && p.catch) p.catch(function(err){ console.warn('SE pause recovery failed:', name, err); });
+          } catch(e) {}
+        }, 0);
+      });
+    }
+
+    function playLoopSfx(name) {
+      initDrivingSfx();
+      var audio = sfxPlayers[name];
+      if (!audio) return;
+
+      bindSeamlessLoopGuard(audio, name);
+      audio._desiredPlaying = true;
+      audio.loop = true;
+
+      if (audio.paused || audio.ended) {
+        try {
+          // 連続状態への入りだけ先頭から。継続中はcurrentTimeを触らないので途切れない。
+          if (audio.ended || audio.currentTime === 0) audio.currentTime = 0;
+          var p = audio.play();
+          if (p && p.catch) p.catch(function(err){ console.warn('SEループ再生失敗:', name, err); });
+        } catch (e) {
+          console.warn('SEループ再生失敗:', name, e);
+        }
+      }
+    }
+
+    function stopLoopSfx(name) {
+      var audio = sfxPlayers[name];
+      if (!audio) return;
+      audio._desiredPlaying = false;
+      if (!audio.paused) {
+        try { audio.pause(); } catch(e) {}
+      }
+      try { audio.currentTime = 0; } catch(e) {}
+    }
+
+    function playOneShotSfx(name) {
+      initDrivingSfx();
+      var base = sfxPlayers[name];
+      if (!base) return;
+
+      try {
+        var shot = new Audio(base.src);
+        shot.preload = 'auto';
+        shot.loop = false;
+        shot.volume = base.volume;
+        shot.currentTime = 0;
+        var p = shot.play();
+        if (p && p.catch) p.catch(function(err){ console.warn('SEワンショット再生失敗:', name, err); });
+      } catch (e) {
+        try {
+          base.loop = false;
+          base.pause();
+          base.currentTime = 0;
+          var p2 = base.play();
+          if (p2 && p2.catch) p2.catch(function(err){ console.warn('SEワンショット再生失敗:', name, err); });
+        } catch (err) {
+          console.warn('SEワンショット再生失敗:', name, err);
+        }
+      }
+    }
+
+    function stopAllDrivingSfx() {
+      stopLoopSfx('curve');
+      stopLoopSfx('drift');
+      stopLoopSfx('brake');
+    }
+
+    function getCurrentPlayerVehicleSpecSafe() {
+      return (typeof getVehicleSpec === 'function') ? getVehicleSpec(selectedCarType) : null;
+    }
+
+    function isTruckCategoryForSfx(spec) {
+      var cat = spec && spec.category ? spec.category : '';
+      return cat === 'medium_truck' || cat === 'large_truck';
+    }
+
+    function maybePlayWheelspinSfx() {
+      if (!gameStarted || paused || crashSequenceActive) return;
+      if (!keys.shift || !keys.w) return;
+      if (wheelspinPlayedThisLaunch) return;
+
+      var spec = getCurrentPlayerVehicleSpecSafe();
+      if (isTruckCategoryForSfx(spec)) return;
+
+      var kmh = gameSpeedToKmh(carState.speed);
+      if (kmh >= 0 && kmh <= 20) {
+        playOneShotSfx('wheelspin');
+        wheelspinPlayedThisLaunch = true;
+      }
+    }
+
+    function updateWheelspinSfxTriggerState() {
+      if (!gameStarted || paused || crashSequenceActive) {
+        previousShiftWForWheelspin = false;
+        wheelspinPlayedThisLaunch = false;
+        return;
+      }
+
+      var currentShiftW = !!(keys.shift && keys.w);
+
+      // 「Shift+Wを押した瞬間」に一回だけ鳴らす。押しっぱなしでは再発火しない。
+      if (currentShiftW && !previousShiftWForWheelspin) {
+        wheelspinPlayedThisLaunch = false;
+        maybePlayWheelspinSfx();
+      }
+
+      if (!currentShiftW) {
+        wheelspinPlayedThisLaunch = false;
+      }
+
+      previousShiftWForWheelspin = currentShiftW;
+    }
+
+    function updateDrivingSfxStates(sharpCurveActive, isDrifting, isHardBraking) {
+      if (!gameStarted || paused || crashSequenceActive) {
+        stopAllDrivingSfx();
+        return;
+      }
+
+      if (isDrifting) {
+        playLoopSfx('drift');
+        stopLoopSfx('curve');
+      } else {
+        stopLoopSfx('drift');
+        if (sharpCurveActive) playLoopSfx('curve');
+        else stopLoopSfx('curve');
+      }
+
+      if (isHardBraking) playLoopSfx('brake');
+      else stopLoopSfx('brake');
+    }
+
+function setupBgmFilePicker() {
       if (bgmPickerSetupDone) return;
       bgmPickerSetupDone = true;
 
@@ -6831,7 +7408,7 @@ function getFemaleAStage() {
           var picker = document.getElementById('localBgmPicker');
           if (picker) picker.style.display = 'none';
 
-          startGameBgmOnce(true);
+          if (gameStarted && !bgmDelayTimerId) startGameBgmOnce(true);
         });
       }
     }
@@ -6853,6 +7430,7 @@ function getFemaleAStage() {
     function tryPlayBgmFromList(audio, paths, index) {
       if (!audio || index >= paths.length) {
         console.warn('BGMファイルを自動再生できませんでした。手動選択に切り替えます。');
+        hideNonGameLoadingOverlaysForBgm();
         bgmStarted = false;
         showBgmPicker();
         return;
@@ -6883,6 +7461,7 @@ function getFemaleAStage() {
 
       var onCanPlay = function() {
         cleanup();
+        hideNonGameLoadingOverlaysForBgm();
         var p = audio.play();
         if (p && p.catch) {
           p.catch(function(err) {
@@ -6906,7 +7485,17 @@ function getFemaleAStage() {
       }, 2400);
     }
 
+    function scheduleBgmAfterGameStart() {
+      hideNonGameLoadingOverlaysForBgm();
+      if (bgmStarted || bgmDelayTimerId) return;
+      bgmDelayTimerId = setTimeout(function() {
+        bgmDelayTimerId = null;
+        startGameBgmOnce();
+      }, 60000);
+    }
+
     function startGameBgmOnce(forceRestart) {
+      hideNonGameLoadingOverlaysForBgm();
       bgmUserGestureDone = true;
 
       if (bgmStarted && !forceRestart) return;
@@ -6938,7 +7527,9 @@ function getFemaleAStage() {
     }
 
     function startGame() {
-      startGameBgmOnce();
+      initDrivingSfx();
+      primeDrivingSfx();
+      scheduleBgmAfterGameStart();
       if (selectedMapType !== initialMapType) rebuildWorldForSelectedMap();
       updatePlayerAvatar();
       gameStarted = true;
@@ -6953,6 +7544,7 @@ function getFemaleAStage() {
 
     function pauseGame() {
       if (!gameStarted) return;
+      stopAllDrivingSfx();
       paused = true;
       document.getElementById('pauseMenu').style.display = 'grid';
     }
@@ -6964,6 +7556,8 @@ function getFemaleAStage() {
     }
 
     function restartGame() {
+      stopAllDrivingSfx();
+      if (bgmDelayTimerId) { clearTimeout(bgmDelayTimerId); bgmDelayTimerId = null; }
       resetGameState();
       menuStep = -1;
       renderSelectionMenu();
@@ -7023,6 +7617,7 @@ function getFemaleAStage() {
     }
 
     function showTitleScreen() {
+      stopAllDrivingSfx();
       gameStarted = false;
       paused = false;
       menuStep = -1;
@@ -7052,11 +7647,12 @@ function getFemaleAStage() {
     }
 
     function showCrashSplashThenReload() {
+      stopAllDrivingSfx();
       var splash = document.getElementById('crashSplash');
       var splashImg = document.getElementById('crashSplashImg');
 
       if (!splash || !splashImg) {
-        location.reload();
+        showTitleScreen();
         return;
       }
 
@@ -7069,7 +7665,12 @@ function getFemaleAStage() {
       crashSequenceActive = true;
 
       setTimeout(function(){
-        location.reload();
+        crashSequenceActive = false;
+        paused = false;
+        if (splash) splash.style.display = 'none';
+        var warning = document.getElementById('warningMessage');
+        if (warning) warning.style.display = 'none';
+        showTitleScreen();
       }, 5000);
     }
 
@@ -7091,12 +7692,12 @@ function getFemaleAStage() {
     }
 
     function onKeyUp(e) {
-      if (e.code === 'KeyW') keys.w = false;
+      if (e.code === 'KeyW') { keys.w = false; wheelspinPlayedThisLaunch = false; previousShiftWForWheelspin = false; }
       if (e.code === 'KeyA') keys.a = false;
       if (e.code === 'KeyS') keys.s = false;
       if (e.code === 'KeyD') keys.d = false;
       if (e.code === 'KeyQ') keys.q = false;
-      if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') keys.shift = false;
+      if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') { keys.shift = false; wheelspinPlayedThisLaunch = false; previousShiftWForWheelspin = false; }
     }
 
     function onMouseMove(e) {
@@ -7142,7 +7743,7 @@ function getFemaleAStage() {
       else if (spec.category === 'kei') targetKmh = 140;
       else if (spec.category === 'compact') targetKmh = 200;
       else if (spec.category === 'sedan') targetKmh = 240;
-      else if (spec.category === 'sports') targetKmh = 300;
+      else if (spec.category === 'sports') targetKmh = 350;
       else if (spec.category === 'suv') targetKmh = 220;
       else if (spec.category === 'minivan') targetKmh = 190;
 
@@ -7456,6 +8057,7 @@ function getFemaleAStage() {
       if (recklessDrivingCooldown > 0) recklessDrivingCooldown -= dt;
       if (dialogueCooldown > 0) dialogueCooldown -= dt;
       if (!gameStarted || paused || crashSequenceActive) return;
+      updateWheelspinSfxTriggerState();
       updateDrivingDialogue(dt);
       updateAutomaticTransmission(dt);
       var baseMaxSpeed = getPlayerMaxSpeedUnits();
@@ -7552,6 +8154,9 @@ function getFemaleAStage() {
           driftState.intensity = 0;
         }
       }
+
+      var hardBrakeSfxActive = keys.shift && keys.s && Math.abs(carState.speed) > 0.5;
+      updateDrivingSfxStates(sharpCurveActive, driftState.active, hardBrakeSfxActive);
 
       // 急カーブ・急ハンドル/ドリフト時だけ外側タイヤから煙・火花を出す
       driftParticleTimer -= dt;
@@ -7701,7 +8306,9 @@ function getFemaleAStage() {
     }
 
     function getSpeedometerMaxKmh() {
-      return Math.max(80, Math.round(gameSpeedToKmh(getPlayerMaxSpeedUnits())));
+      // 速度メーターの最大目盛りは、選択車種の最高速度 + 40km/h。
+      // 例：スポーツカー350km/h → 最大目盛り390km/h。
+      return Math.max(80, Math.round(gameSpeedToKmh(getPlayerMaxSpeedUnits())) + 40);
     }
 
     function renderSpeedometerFace(maxKmh) {
@@ -7712,9 +8319,14 @@ function getFemaleAStage() {
       var oldMarks = meter.querySelectorAll('.speedTick, .speedNumber');
       for (var i=0; i<oldMarks.length; i++) oldMarks[i].remove();
 
-      var majorStep = maxKmh <= 160 ? 20 : (maxKmh <= 240 ? 40 : 50);
+      var majorStep = maxKmh <= 180 ? 20 : (maxKmh <= 280 ? 40 : 50);
       var minorStep = majorStep / 2;
-      for (var v=0; v<=maxKmh; v+=minorStep) {
+      var ticks = [];
+      for (var tv=0; tv<=maxKmh; tv+=minorStep) ticks.push(tv);
+      if (ticks[ticks.length-1] !== maxKmh) ticks.push(maxKmh);
+
+      for (var ti=0; ti<ticks.length; ti++) {
+        var v = ticks[ti];
         var isMajor = Math.abs(v % majorStep) < 0.001 || v === 0 || v === maxKmh;
         var percent = v / Math.max(maxKmh, 1);
         var angle = -130 + percent * 260;
@@ -7806,6 +8418,9 @@ function getFemaleAStage() {
     }
 
     function checkHumanNPCCollision(position) {
+      // レインボーロード系・サーキットには歩行者を出さない。
+      // マップ切替時に前マップの透明NPC判定だけ残る事故を防ぐ。
+      if (selectedMapType === 'rainbow' || selectedMapType === 'rainbow2' || selectedMapType === 'circuit') return null;
       if (!npcGroup) return null;
 
       // 歩行者の当たり判定を見た目に近い小さめの円形にする。
@@ -7817,7 +8432,28 @@ function getFemaleAStage() {
 
       for (var i=0; i<npcGroup.children.length; i++) {
         var npc = npcGroup.children[i];
-        if (npc.userData.isHit) continue;
+        if (!npc || npc.userData.isHit || npc.visible === false || !npc.parent) continue;
+
+        // メッシュが透明化・非表示化されている場合も当たり判定から除外する。
+        var visibleMeshFound = false;
+        npc.traverse(function(part) {
+          if (visibleMeshFound || !part || !part.isMesh) return;
+          if (part.visible === false) return;
+          if (part.material) {
+            var mats = Array.isArray(part.material) ? part.material : [part.material];
+            for (var mi=0; mi<mats.length; mi++) {
+              var mat = mats[mi];
+              if (!mat) continue;
+              if (mat.transparent && mat.opacity <= 0.05) continue;
+              visibleMeshFound = true;
+              break;
+            }
+          } else {
+            visibleMeshFound = true;
+          }
+        });
+        if (!visibleMeshFound) continue;
+
         var dx = position.x - npc.position.x;
         var dz = position.z - npc.position.z;
         var minDist = carRadius + pedestrianRadius;
@@ -7926,6 +8562,8 @@ function getFemaleAStage() {
     }
 
     function checkTwoWheelCollision(position) {
+      // レインボーロード系・サーキットでは二輪NPCを出さないため、残留判定も無効化する。
+      if (selectedMapType === 'rainbow' || selectedMapType === 'rainbow2' || selectedMapType === 'circuit') return null;
       var playerRadius = 2.2;
       var list = bikes.concat(bicycles);
       for (var i=0; i<list.length; i++) {
