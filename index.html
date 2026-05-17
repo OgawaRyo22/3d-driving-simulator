@@ -10,6 +10,7 @@ html, body {
   overflow: hidden !important;
   width: 100%;
   height: 100%;
+  min-height: 100%;
   margin: 0;
   padding: 0;
   scrollbar-width: none;
@@ -794,6 +795,15 @@ body::-webkit-scrollbar {
       font-weight: 850;
       box-shadow: 0 10px 26px rgba(0,0,0,0.35);
     }
+    .titleOptimizationSelect {
+      margin: 0;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.90);
+      color: #111;
+      font-size: 12px;
+      font-weight: 900;
+    }
     .toggleSwitch {
       position: relative;
       width: 48px;
@@ -826,6 +836,77 @@ body::-webkit-scrollbar {
     .toggleSwitch input:checked + .toggleSlider::before {
       transform: translateX(24px);
     }
+
+    /* タイトル画面では選択グリッドのスクロールを使わず、全要素が収まる高さを確保する */
+    #ui.titleScreen {
+      overflow: hidden !important;
+      min-height: 100vh;
+      height: 100vh;
+      align-items: stretch;
+      justify-items: stretch;
+      place-items: stretch;
+    }
+
+    #ui.titleScreen #panel.gameSelectPanel {
+      min-height: 100vh;
+      height: 100vh;
+      width: 100vw;
+      max-width: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden !important;
+    }
+
+    #ui.titleScreen #menuGrid.selectGrid,
+    #ui.titleScreen .selectGrid {
+      display: block;
+      width: min(92vw, 980px);
+      height: 100vh;
+      min-height: 720px;
+      max-height: none !important;
+      overflow: hidden !important;
+      padding: 0;
+    }
+
+    #ui.titleScreen .titleMenuBody {
+      min-height: 720px;
+      height: 100vh;
+      max-height: none;
+      justify-content: center;
+      overflow: hidden !important;
+      box-sizing: border-box;
+      padding: clamp(28px, 4vh, 54px) 18px clamp(28px, 4vh, 54px);
+    }
+
+    #ui.titleScreen .titleMenuBody::-webkit-scrollbar,
+    #ui.titleScreen #menuGrid::-webkit-scrollbar,
+    #ui.titleScreen .selectGrid::-webkit-scrollbar {
+      display: none;
+    }
+
+    @media (max-height: 760px) {
+      #ui.titleScreen #menuGrid.selectGrid,
+      #ui.titleScreen .selectGrid {
+        min-height: 100vh;
+      }
+
+      #ui.titleScreen .titleMenuBody {
+        min-height: 100vh;
+        gap: 10px;
+        padding-top: 18px;
+        padding-bottom: 18px;
+      }
+
+      #ui.titleScreen .mainGameTitle {
+        font-size: clamp(42px, 7.2vw, 82px);
+      }
+
+      #ui.titleScreen .titleOptimizeBox {
+        margin-top: 10px;
+      }
+    }
+
     #ui.map-origin {
       background: linear-gradient(rgba(0,0,0,0.42), rgba(0,0,0,0.50)), radial-gradient(circle at 50% 40%, rgba(88,160,95,0.45), rgba(30,60,42,0.8));
     }
@@ -893,8 +974,9 @@ body::-webkit-scrollbar {
         <option value="large_truck_1">大型トラック 1</option><option value="large_truck_2">大型トラック 2</option><option value="large_truck_3">大型トラック 3</option><option value="large_truck_4">大型トラック 4</option>
       </select>
       <select id="optimizationSelect" style="display:none;">
-        <option value="on">ON（軽量）</option>
-        <option value="off">OFF（最適化なし）</option>
+        <option value="off">無し（高画質）</option>
+        <option value="medium">中（軽量）</option>
+        <option value="strong">強（context lost対策）</option>
       </select>
     </div>
   </div>
@@ -923,6 +1005,7 @@ body::-webkit-scrollbar {
     <button id="localM3CloseButton" style="font-weight:900; border-radius:999px; padding:11px 20px;">閉じる</button>
   </div>
 
+  <audio id="menuBgmPlayer" preload="auto" loop src="assets/bgm_menu1.wav"></audio>
   <audio id="bgmPlayer" preload="auto"></audio>
   <input id="localBgmFileInput" type="file" accept=".wav,.mp3,.ogg,.m4a,.aac,audio/*" style="display:none;">
   <div id="localBgmPicker" style="display:none; position:fixed; right:22px; top:84px; z-index:999998; width:min(420px,88vw); padding:14px 16px; border-radius:16px; background:rgba(0,0,0,0.82); color:white; border:1px solid rgba(255,255,255,0.25); box-shadow:0 14px 48px rgba(0,0,0,0.55);">
@@ -1147,9 +1230,17 @@ body::-webkit-scrollbar {
     var driftSmokeTexture = null;
     var driftSparkTexture = null;
     var driftState = { active:false, timer:0, intensity:0, steerDir:0, curveDir:0 };
-    var optimizationMode = localStorage.getItem('optimizationMode');
-    if (optimizationMode !== 'off') optimizationMode = 'on';
-    var isOptimizedMode = optimizationMode === 'on';
+    var optimizationMode = localStorage.getItem('optimizationMode') || 'medium';
+    if (optimizationMode === 'on') optimizationMode = 'medium';
+    if (optimizationMode !== 'off' && optimizationMode !== 'medium' && optimizationMode !== 'strong') optimizationMode = 'medium';
+    var isOptimizationOff = optimizationMode === 'off';
+    var isOptimizationMedium = optimizationMode === 'medium';
+    var isOptimizationStrong = optimizationMode === 'strong';
+    var isOptimizedMode = optimizationMode !== 'off';
+    var renderFrameCounter = 0;
+    var miniMapFrameCounter = 0;
+    var menuBgmStarted = false;
+    var menuBgmAutoplayTried = false;
 
     // 道路テクスチャ用キャッシュは init() より前に初期化する。
     // init() 内で道路マテリアルを生成するため、ここで未定義だと起動エラーになる。
@@ -1160,7 +1251,14 @@ body::-webkit-scrollbar {
     function createSafeRenderer() {
       var created = null;
       try {
-        created = new THREE.WebGLRenderer({ antialias:!isOptimizedMode, powerPreference:'high-performance' });
+        created = new THREE.WebGLRenderer({
+          antialias: !isOptimizedMode,
+          alpha: false,
+          stencil: false,
+          depth: true,
+          preserveDrawingBuffer: false,
+          powerPreference: isOptimizationStrong ? 'low-power' : 'high-performance'
+        });
       } catch (e) {
         console.error(e);
         var msg = document.createElement('div');
@@ -1169,9 +1267,21 @@ body::-webkit-scrollbar {
         document.body.appendChild(msg);
         return null;
       }
-      created.setPixelRatio(isOptimizedMode ? 1 : Math.min(window.devicePixelRatio, 2));
+      var safePixelRatio = isOptimizationStrong ? 0.72 : (isOptimizationMedium ? 1 : Math.min(window.devicePixelRatio || 1, 2));
+      created.setPixelRatio(safePixelRatio);
       created.setSize(window.innerWidth, window.innerHeight);
       created.shadowMap.enabled = !isOptimizedMode;
+      if (created.domElement) {
+        created.domElement.addEventListener('webglcontextlost', function(e) {
+          e.preventDefault();
+          console.warn('WebGL context lost: 強最適化またはタブ再読み込みを推奨します。');
+          showTemporaryNotice('描画メモリ不足を検知しました。強最適化で再読み込みしてください');
+        }, false);
+        created.domElement.addEventListener('webglcontextrestored', function() {
+          console.warn('WebGL context restored. Reloading scene...');
+          location.reload();
+        }, false);
+      }
       return created;
     }
 
@@ -1221,9 +1331,10 @@ body::-webkit-scrollbar {
         optimizationSelect.value = optimizationMode;
         optimizationSelect.addEventListener('click', function(e){ e.stopPropagation(); });
         optimizationSelect.addEventListener('change', function(e){
-          optimizationMode = e.target.value === 'off' ? 'off' : 'on';
+          optimizationMode = (e.target.value === 'off' || e.target.value === 'strong') ? e.target.value : 'medium';
           localStorage.setItem('optimizationMode', optimizationMode);
-          location.reload();
+          showPageLoading('assets/eye1.png');
+          setTimeout(function(){ location.reload(); }, 180);
         });
       }
       setupSelectionMenu();
@@ -1242,8 +1353,13 @@ body::-webkit-scrollbar {
       document.addEventListener('contextmenu', function(e){ e.preventDefault(); });
       window.addEventListener('resize', onResize);
       window.addEventListener('load', function () {
-      hidePageLoading();
+        hidePageLoading();
+        startMenuBgmAfterBrowserLoad();
       });
+      if (document.readyState === 'complete') {
+        hidePageLoading();
+        startMenuBgmAfterBrowserLoad();
+      }
     }
 
 function showPageLoading(customImage) {
@@ -1724,16 +1840,22 @@ function getFemaleAStage() {
       else ui.classList.add('map-' + selectedMapType);
     }
 
+    function getOptimizationLabel(mode) {
+      if (mode === 'off') return '無し（高画質）';
+      if (mode === 'strong') return '強（context lost対策）';
+      return '中（軽量）';
+    }
+
     function bindTitleOptimizeToggle() {
-      var toggle = document.getElementById('titleOptimizationToggle');
+      var select = document.getElementById('titleOptimizationSelect');
       var label = document.getElementById('titleOptimizationState');
-      if (!toggle) return;
-      toggle.checked = optimizationMode !== 'off';
-      if (label) label.textContent = toggle.checked ? 'ON（軽量）' : 'OFF（高画質）';
-      toggle.onchange = function(e) {
-        optimizationMode = toggle.checked ? 'on' : 'off';
+      if (!select) return;
+      select.value = optimizationMode;
+      if (label) label.textContent = getOptimizationLabel(optimizationMode);
+      select.onchange = function(e) {
+        optimizationMode = (select.value === 'off' || select.value === 'strong') ? select.value : 'medium';
         localStorage.setItem('optimizationMode', optimizationMode);
-        if (label) label.textContent = toggle.checked ? 'ON（軽量）' : 'OFF（高画質）';
+        if (label) label.textContent = getOptimizationLabel(optimizationMode);
         showPageLoading('assets/eye1.png');
         setTimeout(function(){ location.reload(); }, 180);
       };
@@ -1773,8 +1895,12 @@ function getFemaleAStage() {
             '</div>' +
             '<div class="titleOptimizeBox">' +
               '<span>最適化設定</span>' +
-              '<label class="toggleSwitch"><input type="checkbox" id="titleOptimizationToggle"><span class="toggleSlider"></span></label>' +
-              '<span id="titleOptimizationState">ON（軽量）</span>' +
+              '<select id="titleOptimizationSelect" class="titleOptimizationSelect">' +
+                '<option value="off">無し</option>' +
+                '<option value="medium">中</option>' +
+                '<option value="strong">強</option>' +
+              '</select>' +
+              '<span id="titleOptimizationState">中（軽量）</span>' +
             '</div>' +
           '</div>';
         setTimeout(function(){
@@ -2274,28 +2400,40 @@ function getFemaleAStage() {
         if (obj.isMesh) {
           obj.castShadow = false;
           obj.receiveShadow = false;
+          obj.frustumCulled = true;
           if (obj.material) {
             var mats = Array.isArray(obj.material) ? obj.material : [obj.material];
             for (var i=0; i<mats.length; i++) {
               if (!mats[i]) continue;
               if ('displacementScale' in mats[i]) mats[i].displacementScale = 0;
-              if ('roughness' in mats[i] && selectedMapType !== 'rainbow') mats[i].roughness = Math.max(mats[i].roughness || 0.5, 0.72);
+              if ('roughness' in mats[i] && selectedMapType !== 'rainbow') mats[i].roughness = Math.max(mats[i].roughness || 0.5, isOptimizationStrong ? 0.88 : 0.72);
+              if (isOptimizationStrong) {
+                if ('metalness' in mats[i]) mats[i].metalness = Math.min(mats[i].metalness || 0, 0.08);
+                if ('envMapIntensity' in mats[i]) mats[i].envMapIntensity = 0;
+              }
             }
           }
         }
 
         if (obj.isPointLight) {
           pointLightCount++;
-          // 発光表現は残しつつ、実ライト数を間引く。特にレインボーロードで効く。
-          if (pointLightCount % 3 !== 0) obj.visible = false;
-          obj.intensity *= 0.65;
-          obj.distance *= 0.72;
+          // 強では実ライトを大幅に間引き、発光メッシュの見た目だけ残してGPU負荷を下げる。
+          var keepModulo = isOptimizationStrong ? 8 : 3;
+          if (pointLightCount % keepModulo !== 0) obj.visible = false;
+          obj.intensity *= isOptimizationStrong ? 0.35 : 0.65;
+          obj.distance *= isOptimizationStrong ? 0.48 : 0.72;
+          obj.castShadow = false;
         }
       });
 
-      if (selectedMapType === 'neo') {
-        scene.fog.near = Math.max(scene.fog.near, 70);
-        scene.fog.far = Math.min(scene.fog.far, 320);
+      if (scene.fog) {
+        if (selectedMapType === 'neo') {
+          scene.fog.near = Math.max(scene.fog.near, isOptimizationStrong ? 95 : 70);
+          scene.fog.far = Math.min(scene.fog.far, isOptimizationStrong ? 240 : 320);
+        }
+        if (isOptimizationStrong && selectedMapType !== 'rainbow' && selectedMapType !== 'rainbow2') {
+          scene.fog.far = Math.min(scene.fog.far, 360);
+        }
       }
       if (selectedMapType === 'rainbow') {
         scene.fog = null;
@@ -2308,7 +2446,7 @@ function getFemaleAStage() {
       sunLight = new THREE.DirectionalLight(0xffffff, 2.4);
       sunLight.position.set(70, 130, 60);
       sunLight.castShadow = !isOptimizedMode;
-      sunLight.shadow.mapSize.set(isOptimizedMode ? 512 : 2048, isOptimizedMode ? 512 : 2048);
+      sunLight.shadow.mapSize.set(isOptimizationStrong ? 256 : (isOptimizedMode ? 512 : 2048), isOptimizationStrong ? 256 : (isOptimizedMode ? 512 : 2048));
       scene.add(sunLight);
     }
 
@@ -3143,7 +3281,7 @@ function softenRainbow2Materials() {
       // 重くなりすぎない間隔で小さなPointLightを道路上と縁に置く。
       if (!rainbowPathPoints || rainbowPathPoints.length < 3) return;
       var originalCount = rainbowPathPoints.length - 1;
-      var step = isOptimizedMode ? Math.max(18, Math.floor(originalCount / 14)) : Math.max(8, Math.floor(originalCount / 34));
+      var step = isOptimizationStrong ? Math.max(34, Math.floor(originalCount / 8)) : (isOptimizedMode ? Math.max(18, Math.floor(originalCount / 14)) : Math.max(8, Math.floor(originalCount / 34)));
 
       for (var i=0; i<originalCount; i+=step) {
         var pt = rainbowPathPoints[i];
@@ -4084,7 +4222,7 @@ function softenRainbow2Materials() {
 
       // 超高層ビル群。
       // 道路部分以外は高密度でビルを配置し、マンハッタンのような超高層ビル街を形成する。
-      var neoBuildingStep = isOptimizedMode ? 52 : 38;
+      var neoBuildingStep = isOptimizationStrong ? 72 : (isOptimizedMode ? 52 : 38);
       for (var gx=-520; gx<=520; gx+=neoBuildingStep) {
         for (var gz=-520; gz<=520; gz+=neoBuildingStep) {
 
@@ -4960,7 +5098,7 @@ function softenRainbow2Materials() {
       group.add(glow);
 
       // 暖色PointLightは控えめ。最適化ONでは本数を間引くので白飛びしにくい。
-      if (!isOptimizedMode || Math.random() < 0.34) {
+      if (!isOptimizedMode || (!isOptimizationStrong && Math.random() < 0.34) || (isOptimizationStrong && Math.random() < 0.10)) {
         var light = new THREE.PointLight(0xffb066, 0.42, 31, 2.0);
         light.position.copy(lamp.position);
         group.add(light);
@@ -5000,7 +5138,7 @@ function softenRainbow2Materials() {
     function addTougeWarmStreetLights() {
       if (!tougePathPoints || tougePathPoints.length < 3) return;
       // 峠マップは道路が高低差を持つため、街灯も道路面の高さに合わせて一定間隔で配置する。
-      var step = isOptimizedMode ? 18 : 12;
+      var step = isOptimizationStrong ? 28 : (isOptimizedMode ? 18 : 12);
       for (var i=0; i<tougePathPoints.length-1; i+=step) {
         if (tougeTunnelFlags[i]) continue;
         var p = tougePathPoints[i];
@@ -5234,9 +5372,9 @@ function softenRainbow2Materials() {
         if (!child || !child.isMesh) return;
 
         child.visible = true;
-        child.frustumCulled = false;
+        child.frustumCulled = isOptimizationStrong ? true : false;
         child.castShadow = !isOptimizedMode;
-        child.receiveShadow = true;
+        child.receiveShadow = !isOptimizationStrong;
 
         if (!child.material) {
           child.material = convertToStandardMaterial(null, 'body', tex);
@@ -6653,7 +6791,8 @@ function softenRainbow2Materials() {
 
       var lanes = [-140,-70,0,70,140];
 
-      for (var i = 0; i < 34; i++) {
+      var trafficCount = isOptimizationStrong ? 12 : (isOptimizationMedium ? 22 : 34);
+      for (var i = 0; i < trafficCount; i++) {
 
         var spec = vehicleTypes[Math.floor(Math.random() * vehicleTypes.length)];
         var v = createVehicleModel(spec, false);
@@ -7051,7 +7190,8 @@ function softenRainbow2Materials() {
 
       var lanes = [-140,-70,0,70,140];
 
-      for (var i=0; i<12; i++) {
+      var bikeCount = isOptimizationStrong ? 3 : (isOptimizationMedium ? 7 : 12);
+      for (var i=0; i<bikeCount; i++) {
         var bike = createMotorcycleModel(i % 2 === 0 ? 0x111111 : 0xc62828);
         bike.userData.twoWheel = true;
         var vertical = Math.random() > 0.5;
@@ -7064,7 +7204,8 @@ function softenRainbow2Materials() {
         scene.add(bike);
       }
 
-      for (var j=0; j<16; j++) {
+      var bicycleCount = isOptimizationStrong ? 4 : (isOptimizationMedium ? 9 : 16);
+      for (var j=0; j<bicycleCount; j++) {
         var bicycle = createBicycleModel(j % 2 === 0 ? 0x2196f3 : 0xff9800);
         bicycle.userData.twoWheel = true;
         var verticalB = Math.random() > 0.5;
@@ -7370,7 +7511,68 @@ function softenRainbow2Materials() {
       else stopLoopSfx('brake');
     }
 
-function setupBgmFilePicker() {
+function getMenuBgmCandidatePaths() {
+      return [
+        'assets/bgm_menu1.wav',
+        './assets/bgm_menu1.wav',
+        'assets/bgm_menu1.WAV',
+        './assets/bgm_menu1.WAV'
+      ];
+    }
+
+    function stopMenuBgm() {
+      var audio = document.getElementById('menuBgmPlayer');
+      if (!audio) return;
+      try {
+        audio.pause();
+        audio.currentTime = 0;
+      } catch(e) {}
+      menuBgmStarted = false;
+    }
+
+    function tryPlayMenuBgmFromList(audio, paths, index) {
+      if (!audio || gameStarted || index >= paths.length) {
+        menuBgmStarted = false;
+        return;
+      }
+      var src = paths[index];
+      audio.pause();
+      audio.src = src;
+      audio.loop = true;
+      audio.volume = 0.58;
+      audio.load();
+      var p = audio.play();
+      if (p && p.then) {
+        p.then(function(){ menuBgmStarted = true; }).catch(function(){
+          menuBgmStarted = false;
+          // 自動再生がブロックされた場合は、最初のクリック/キー入力で再試行する。
+          var unlock = function() {
+            document.removeEventListener('pointerdown', unlock);
+            document.removeEventListener('keydown', unlock);
+            if (!gameStarted) startMenuBgmAfterBrowserLoad(true);
+          };
+          document.addEventListener('pointerdown', unlock, { once:true });
+          document.addEventListener('keydown', unlock, { once:true });
+        });
+      } else {
+        menuBgmStarted = true;
+      }
+      audio.addEventListener('error', function(){
+        tryPlayMenuBgmFromList(audio, paths, index + 1);
+      }, { once:true });
+    }
+
+    function startMenuBgmAfterBrowserLoad(forceRestart) {
+      if (gameStarted) return;
+      if (menuBgmStarted && !forceRestart) return;
+      if (menuBgmAutoplayTried && !forceRestart) return;
+      menuBgmAutoplayTried = true;
+      var audio = document.getElementById('menuBgmPlayer');
+      if (!audio) return;
+      tryPlayMenuBgmFromList(audio, getMenuBgmCandidatePaths(), 0);
+    }
+
+    function setupBgmFilePicker() {
       if (bgmPickerSetupDone) return;
       bgmPickerSetupDone = true;
 
@@ -7485,6 +7687,17 @@ function setupBgmFilePicker() {
       }, 2400);
     }
 
+    function stopGameBgm() {
+      var bgm = document.getElementById('bgmPlayer');
+      if (bgm) {
+        try {
+          bgm.pause();
+          bgm.currentTime = 0;
+        } catch(e) {}
+      }
+      bgmStarted = false;
+    }
+
     function scheduleBgmAfterGameStart() {
       hideNonGameLoadingOverlaysForBgm();
       if (bgmStarted || bgmDelayTimerId) return;
@@ -7527,6 +7740,7 @@ function setupBgmFilePicker() {
     }
 
     function startGame() {
+      stopMenuBgm();
       initDrivingSfx();
       primeDrivingSfx();
       scheduleBgmAfterGameStart();
@@ -7557,6 +7771,7 @@ function setupBgmFilePicker() {
 
     function restartGame() {
       stopAllDrivingSfx();
+      stopGameBgm();
       if (bgmDelayTimerId) { clearTimeout(bgmDelayTimerId); bgmDelayTimerId = null; }
       resetGameState();
       menuStep = -1;
@@ -7629,6 +7844,8 @@ function setupBgmFilePicker() {
       if (bar) bar.style.display = 'none';
       dialogueDisplayTimer = 0;
       setMenuVisualMode();
+      menuBgmAutoplayTried = false;
+      startMenuBgmAfterBrowserLoad(true);
     }
 
     function showIncidentMessage(message) {
@@ -9364,14 +9581,16 @@ function setupBgmFilePicker() {
     function animate() {
       requestAnimationFrame(animate);
       var dt = Math.min(clock.getDelta(), 0.04);
+      renderFrameCounter++;
+      miniMapFrameCounter++;
       updateDayNightCycle();
       updateTrafficLights();
       updateCar(dt);
       updateNPCs(dt);
-      updateTrafficVehicles(dt);
+      if (!isOptimizationStrong || renderFrameCounter % 2 === 0) updateTrafficVehicles(dt * (isOptimizationStrong ? 2 : 1));
       updateParticles(dt);
-      updateMiniMap();
-      if (renderer) renderer.render(scene, camera);
+      if (!isOptimizationStrong || miniMapFrameCounter % 4 === 0) updateMiniMap();
+      if (renderer && (!isOptimizationStrong || renderFrameCounter % 2 === 0)) renderer.render(scene, camera);
     }
 
     function onResize() {
