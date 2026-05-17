@@ -998,7 +998,7 @@ body::-webkit-scrollbar {
   <div id="localM3Picker" style="display:none; position:fixed; left:50%; top:50%; transform:translate(-50%,-50%); z-index:999999; width:min(680px,92vw); padding:22px 26px; border-radius:20px; background:rgba(0,0,0,0.86); color:white; border:1px solid rgba(255,255,255,0.28); box-shadow:0 18px 70px rgba(0,0,0,0.62); text-align:center;">
     <div style="font-size:20px; font-weight:900; margin-bottom:10px;">BMW M3 G80 のFBXを読み込みます</div>
     <div style="font-size:13px; line-height:1.7; color:rgba(255,255,255,0.86); margin-bottom:14px;">
-      自動読み込みに失敗した場合のみ、下のボタンから手動で読み込めます。<br>
+      最適化設定が「無し」の場合のみFBXを読み込みます。自動読み込みに失敗した場合は下のボタンから手動で読み込めます。<br>
       下のボタンから <b>assets/m3G50 フォルダ内の FBX と JPG/PNG</b> をまとめて選択してください。
     </div>
     <button id="localM3PickButton" style="font-weight:900; border-radius:999px; padding:11px 20px;">FBX/JPGを選択</button>
@@ -1257,6 +1257,7 @@ body::-webkit-scrollbar {
           stencil: false,
           depth: true,
           preserveDrawingBuffer: false,
+          precision: isOptimizationStrong ? 'lowp' : 'highp',
           powerPreference: isOptimizationStrong ? 'low-power' : 'high-performance'
         });
       } catch (e) {
@@ -1267,7 +1268,7 @@ body::-webkit-scrollbar {
         document.body.appendChild(msg);
         return null;
       }
-      var safePixelRatio = isOptimizationStrong ? 0.72 : (isOptimizationMedium ? 1 : Math.min(window.devicePixelRatio || 1, 2));
+      var safePixelRatio = isOptimizationStrong ? 0.5 : (isOptimizationMedium ? 0.85 : Math.min(window.devicePixelRatio || 1, 2));
       created.setPixelRatio(safePixelRatio);
       created.setSize(window.innerWidth, window.innerHeight);
       created.shadowMap.enabled = !isOptimizedMode;
@@ -1303,9 +1304,11 @@ body::-webkit-scrollbar {
       createSelectedMap();
       addWarmStreetLightsForCurrentMap();
       applyOptimizationModeToScene();
-      retileAllRoadTextureMeshes();
-      retileAllWhiteLineTextureMeshes();
-      applyRoadTextureUv2ToRoadMeshes();
+      if (!isOptimizationStrong) {
+        retileAllRoadTextureMeshes();
+        retileAllWhiteLineTextureMeshes();
+        applyRoadTextureUv2ToRoadMeshes();
+      }
       addCar();
       resetAutomaticTransmission();
       addTrafficVehicles();
@@ -1990,9 +1993,11 @@ function getFemaleAStage() {
       createSelectedMap();
       addWarmStreetLightsForCurrentMap();
       applyOptimizationModeToScene();
-      retileAllRoadTextureMeshes();
-      retileAllWhiteLineTextureMeshes();
-      applyRoadTextureUv2ToRoadMeshes();
+      if (!isOptimizationStrong) {
+        retileAllRoadTextureMeshes();
+        retileAllWhiteLineTextureMeshes();
+        applyRoadTextureUv2ToRoadMeshes();
+      }
       addCar();
       resetAutomaticTransmission();
       addTrafficVehicles();
@@ -2468,8 +2473,9 @@ function getFemaleAStage() {
           scene.fog.near = 150;
           scene.fog.far = 680;
         }
-        ambientLight.intensity = 1.55;
-        sunLight.intensity = 2.25;
+        // 空の明るさは維持し、オブジェクトだけ極端な明暗差が出ないようにする。
+        ambientLight.intensity = 1.72;
+        sunLight.intensity = 0.92;
         sunLight.position.set(-70, 150, 70);
         return;
       }
@@ -2841,14 +2847,15 @@ var controlTower = new THREE.Mesh(new THREE.BoxGeometry(18, 28, 18), towerMat);
       intersectionSignals.length = 0;
       trafficLights.length = 0;
 
-      ambientLight.intensity = 1.55;
-      sunLight.intensity = 2.25;
+      // 空の明るさは維持し、オブジェクトだけ極端な明暗差が出ないようにする。
+      ambientLight.intensity = 1.72;
+      sunLight.intensity = 0.92;
       sunLight.position.set(-70, 150, 70);
 
       createRainbowGardenSkyDecorations();
 
       var roadWidth = 14.8;
-      var pointCount = 240;
+      var pointCount = isOptimizationStrong ? 128 : 240;
       for (var i=0; i<pointCount; i++) {
         var t = i / pointCount;
         var a = t * Math.PI * 2;
@@ -2922,10 +2929,10 @@ var controlTower = new THREE.Mesh(new THREE.BoxGeometry(18, 28, 18), towerMat);
             mat.color.setHex(0xffd700);
             if (mat.emissive) {
               mat.emissive.setHex(0x8a5a00);
-              mat.emissiveIntensity = 0.20;
+              mat.emissiveIntensity = 0.06;
             }
-            if (typeof mat.metalness === 'number') mat.metalness = 0.86;
-            if (typeof mat.roughness === 'number') mat.roughness = 0.16;
+            if (typeof mat.metalness === 'number') mat.metalness = 0.42;
+            if (typeof mat.roughness === 'number') mat.roughness = 0.44;
             mat.transparent = false;
             mat.opacity = 1.0;
             mat.needsUpdate = true;
@@ -3005,8 +3012,8 @@ function softenRainbow2Materials() {
             mat.depthWrite = true;
             mat.blending = THREE.NormalBlending;
             mat.side = THREE.DoubleSide;
-            if ('roughness' in mat) mat.roughness = Math.min(mat.roughness == null ? 0.20 : mat.roughness, 0.24);
-            if ('metalness' in mat) mat.metalness = Math.max(mat.metalness == null ? 0.58 : mat.metalness, 0.52);
+            if ('roughness' in mat) mat.roughness = Math.max(mat.roughness == null ? 0.44 : mat.roughness, 0.40);
+            if ('metalness' in mat) mat.metalness = Math.min(mat.metalness == null ? 0.42 : mat.metalness, 0.46);
             if ('emissiveIntensity' in mat) mat.emissiveIntensity = 0.0;
           }
 
@@ -3033,9 +3040,18 @@ function softenRainbow2Materials() {
             mat.opacity = 1.0;
             mat.depthWrite = true;
             mat.blending = THREE.NormalBlending;
-            if ('roughness' in mat) mat.roughness = 0.035;
-            if ('metalness' in mat) mat.metalness = 0.82;
+            // レインボーロード2の路面は反射を残しつつ、白飛び・黒つぶれを抑える。
+            if ('roughness' in mat) mat.roughness = 0.26;
+            if ('metalness' in mat) mat.metalness = 0.38;
+            if ('envMapIntensity' in mat) mat.envMapIntensity = 0.18;
             if ('emissiveIntensity' in mat) mat.emissiveIntensity = 0.0;
+          }
+
+          // レインボーロード2全体のコントラストを落とす。色相・彩度・空の明るさは触らない。
+          if (!isRoad && !isFence) {
+            if ('roughness' in mat) mat.roughness = Math.max(mat.roughness == null ? 0.68 : mat.roughness, 0.62);
+            if ('metalness' in mat) mat.metalness = Math.min(mat.metalness == null ? 0.0 : mat.metalness, 0.18);
+            if ('envMapIntensity' in mat) mat.envMapIntensity = Math.min(mat.envMapIntensity == null ? 0.2 : mat.envMapIntensity, 0.18);
           }
 
           mat.needsUpdate = true;
@@ -3051,7 +3067,8 @@ function softenRainbow2Materials() {
 
     function createRainbowGardenSkyDecorations() {
       var cloudMat = new THREE.MeshBasicMaterial({ color:0xffffff, transparent:true, opacity:0.62, depthWrite:false });
-      for (var i=0; i<46; i++) {
+      var cloudCount = isOptimizationStrong ? 14 : 46;
+      for (var i=0; i<cloudCount; i++) {
         var cloud = new THREE.Group();
         var ang = i * 0.78;
         var r = 210 + (i % 7) * 22;
@@ -3066,7 +3083,8 @@ function softenRainbow2Materials() {
       }
 
       var bubbleMat = new THREE.MeshBasicMaterial({ color:0xcfffff, transparent:true, opacity:0.16, blending:THREE.NormalBlending, depthWrite:false, side:THREE.DoubleSide, toneMapped:true });
-      for (var b=0; b<54; b++) {
+      var bubbleCount = isOptimizationStrong ? 12 : 54;
+      for (var b=0; b<bubbleCount; b++) {
         var bubble = new THREE.Mesh(new THREE.SphereGeometry(2.8 + (b%4)*1.4, 12, 8), bubbleMat);
         var ba = b * 1.37;
         var br = 70 + (b % 13) * 15;
@@ -3165,7 +3183,7 @@ function softenRainbow2Materials() {
       });
 
       var originalCount = rainbowPathPoints.length - 1;
-      var islandIndices = [16, 48, 82, 118, 152, 190, 222];
+      var islandIndices = isOptimizationStrong ? [18, 68, 118, 168] : [16, 48, 82, 118, 152, 190, 222];
 
       for (var ii = 0; ii < islandIndices.length; ii++) {
         var idx = islandIndices[ii] % originalCount;
@@ -3216,17 +3234,19 @@ function softenRainbow2Materials() {
         island.add(bean);
 
         // 垂れ下がる蔦で、浮島の周囲にも立体感を追加
-        for (var v = 0; v < 16; v++) {
+        var vineCount = isOptimizationStrong ? 6 : 16;
+        for (var v = 0; v < vineCount; v++) {
           var vine = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.55, 16 + (v % 5) * 3, 7), stemMat);
-          var va = v / 16 * Math.PI * 2;
+          var va = v / vineCount * Math.PI * 2;
           vine.position.set(Math.cos(va) * 19, -9 - (v % 4) * 2, Math.sin(va) * 19);
           vine.rotation.z = 0.3 * Math.sin(v);
           island.add(vine);
         }
 
-        for (var f = 0; f < 11; f++) {
+        var flowerCount = isOptimizationStrong ? 4 : 11;
+        for (var f = 0; f < flowerCount; f++) {
           var flower = createSimpleGardenFlower(flowerMats[f % flowerMats.length]);
-          var fa = f / 11 * Math.PI * 2 + ii * 0.4;
+          var fa = f / flowerCount * Math.PI * 2 + ii * 0.4;
           flower.position.set(Math.cos(fa) * 12, 4.2, Math.sin(fa) * 12);
           flower.scale.setScalar(1.05 + (f % 3) * 0.22);
           island.add(flower);
@@ -3236,7 +3256,8 @@ function softenRainbow2Materials() {
       }
 
       // 道路から離れた場所だけに巨大な厚み付き葉を生成する。
-      for (var li = 0; li < 34; li++) {
+      var leafCount = isOptimizationStrong ? 10 : 34;
+      for (var li = 0; li < leafCount; li++) {
         var p = rainbowPathPoints[(li * 7 + 6) % originalCount];
         var prev2 = rainbowPathPoints[(li * 7 + 4 + originalCount) % originalCount];
         var next2 = rainbowPathPoints[(li * 7 + 8) % originalCount];
@@ -5687,7 +5708,8 @@ function softenRainbow2Materials() {
       var bodyHeight = spec.height || 1.5;
 
       // ===== 外部FBXモデル：BMW M3 Competition G80（セダン6） =====
-      if (spec.fbxModel) {
+      // 中・強ではFBXと外部テクスチャを読まず、下のm3Style簡易モデルへフォールバックする。
+      if (spec.fbxModel && isOptimizationOff) {
         bodyLength = spec.length || 4.8;
         bodyWidth = spec.width || 1.92;
         bodyHeight = spec.height || 1.42;
@@ -6778,6 +6800,8 @@ function softenRainbow2Materials() {
     }
 
     function addTrafficVehicles() {
+      // 強最適化では、読み込み時のメモリ確保を根本的に減らすため交通NPCを生成しない。
+      if (isOptimizationStrong) return;
       if (isRainbowLikeMap() || selectedMapType === 'circuit') return;
       if (selectedMapType === 'neo') {
         addNeoTrafficVehicles();
@@ -7182,6 +7206,8 @@ function softenRainbow2Materials() {
     }
 
     function addTwoWheelNPCs() {
+      // 強最適化では二輪NPCも生成せず、ジオメトリと更新処理を削減する。
+      if (isOptimizationStrong) return;
       if (isRainbowLikeMap() || selectedMapType === 'circuit') return;
       if (selectedMapType === 'touge') {
         addTougeTwoWheelNPCs();
@@ -9588,7 +9614,7 @@ function getMenuBgmCandidatePaths() {
       updateCar(dt);
       updateNPCs(dt);
       if (!isOptimizationStrong || renderFrameCounter % 2 === 0) updateTrafficVehicles(dt * (isOptimizationStrong ? 2 : 1));
-      updateParticles(dt);
+      if (!isOptimizationStrong || renderFrameCounter % 3 === 0) updateParticles(dt * (isOptimizationStrong ? 3 : 1));
       if (!isOptimizationStrong || miniMapFrameCounter % 4 === 0) updateMiniMap();
       if (renderer && (!isOptimizationStrong || renderFrameCounter % 2 === 0)) renderer.render(scene, camera);
     }
